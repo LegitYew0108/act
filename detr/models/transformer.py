@@ -46,7 +46,11 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, mask, query_embed, pos_embed, latent_input=None, proprio_input=None, additional_pos_embed=None):
+    def forward(self, src, mask, query_embed, pos_embed, latent_input=None, proprio_input=None, additional_pos_embed=None,
+                extra_input=None, extra_pos=None, extra_pad=None):
+        """extra_input/extra_pos: (bs, M, d) conditioning tokens appended to the encoder memory.
+        extra_pad: (bs, M) bool, True marks an ignored token. When extra_input is None the
+        computation is identical to upstream ACT."""
         # TODO flatten only when input has H and W
         if len(src.shape) == 4: # has H and W
             # flatten NxCxHxW to HWxNxC
@@ -61,7 +65,15 @@ class Transformer(nn.Module):
 
             addition_input = torch.stack([latent_input, proprio_input], axis=0)
             src = torch.cat([addition_input, src], axis=0)
+            if extra_input is not None:
+                assert mask is None, 'extra tokens build their own key padding mask'
+                src = torch.cat([src, extra_input.permute(1, 0, 2)], axis=0)
+                pos_embed = torch.cat([pos_embed, extra_pos.permute(1, 0, 2)], axis=0)
+                if extra_pad is not None:
+                    base = torch.zeros((bs, src.shape[0] - extra_input.shape[1]), dtype=torch.bool, device=src.device)
+                    mask = torch.cat([base, extra_pad.to(torch.bool)], dim=1)
         else:
+            assert extra_input is None, 'extra tokens require image features'
             assert len(src.shape) == 3
             # flatten NxHWxC to HWxNxC
             bs, hw, c = src.shape

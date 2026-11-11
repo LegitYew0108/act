@@ -75,8 +75,9 @@ class DETRVAE(nn.Module):
         self.latent_out_proj = nn.Linear(self.latent_dim, hidden_dim) # project latent sample to embedding
         self.additional_pos_embed = nn.Embedding(2, hidden_dim) # learned position embedding for proprio and latent
 
-    def forward(self, qpos, image, env_state, actions=None, is_pad=None):
+    def forward(self, qpos, image, env_state, actions=None, is_pad=None, extra_tokens=None, extra_pos=None, extra_pad=None):
         """
+        extra_tokens/extra_pos: optional (batch, M, hidden_dim) encoder conditioning tokens; extra_pad: (batch, M) bool
         qpos: batch, qpos_dim
         image: batch, num_cam, channel, height, width
         env_state: None
@@ -128,10 +129,12 @@ class DETRVAE(nn.Module):
             # fold camera dimension into width dimension
             src = torch.cat(all_cam_features, axis=3)
             pos = torch.cat(all_cam_pos, axis=3)
-            hs = self.transformer(src, None, self.query_embed.weight, pos, latent_input, proprio_input, self.additional_pos_embed.weight)[0]
+            hs = self.transformer(src, None, self.query_embed.weight, pos, latent_input, proprio_input, self.additional_pos_embed.weight,
+                                  extra_input=extra_tokens, extra_pos=extra_pos, extra_pad=extra_pad)[0]
         else:
             qpos = self.input_proj_robot_state(qpos)
             env_state = self.input_proj_env_state(env_state)
+            assert extra_tokens is None, 'extra tokens require image backbones'
             transformer_input = torch.cat([qpos, env_state], axis=1) # seq length = 2
             hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[0]
         a_hat = self.action_head(hs)
